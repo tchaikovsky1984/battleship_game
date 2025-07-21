@@ -85,3 +85,53 @@ void place_ship(PlayerBoard *board, const Ship *ship_to_place) {
     }
 }
 
+int take_shot(PlayerBoard *board, int row, int col, int *is_hit, int *is_sunk){
+    if (board == NULL || row < 0 || row >= BOARD_ROWS || col < 0 || col >= BOARD_COLS) {
+        *is_hit = 0;
+        *is_sunk = 0;
+        return 0; // Invalid shot
+    }
+
+    if (board->grid[row][col] == WATER) {
+        board->grid[row][col] = MISS;
+        *is_hit = 0;
+        *is_sunk = 0;
+        return 0; // Miss
+    } else if (board->grid[row][col] == SHIP) {
+        board->grid[row][col] = HIT;
+        *is_hit = 1;
+
+        // Check if any ship was hit and sunk
+        *is_sunk = 0;
+        for (int i = 0; i < NUM_SHIPS; i++) {
+            Ship *s = &board->ships[i];
+            if (s->hits < s->size) { // Only check if not already sunk
+                int hit_count = 0;
+                for (int j = 0; j < s->size; j++) {
+                    int r = s->row + (s->orientation == VERTICAL ? j : 0);
+                    int c = s->col + (s->orientation == HORIZONTAL ? j : 0);
+                    if (r == row && c == col) { // This specific part of the ship was hit
+                        s->hits++;
+                        break;
+                    }
+                }
+                if (s->hits == s->size) {
+                    *is_sunk = 1; // A ship was just sunk!
+                    board->ships_remaining--;
+                    // Optionally, you might want to return which ship was sunk
+                }
+            }
+        }
+        return 1; // Hit
+    }
+    // If it's already HIT or MISS, treat as a miss (or inform player it's already shot)
+    *is_hit = 0;
+    *is_sunk = 0;
+    return 0;
+}
+
+int check_game_over(PlayerBoard *board){
+  if(board == NULL)
+    return 0;
+  return (board->ships_remaining <= 0);
+}
