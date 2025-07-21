@@ -1,0 +1,10 @@
+# Binaries
+bin/
+
+# Object files
+*.o
+*.exe
+
+# Editor swap files
+*~
+*.swap
