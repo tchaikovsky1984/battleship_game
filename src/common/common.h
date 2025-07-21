@@ -19,7 +19,8 @@ typedef enum {
   BATTLESHIP,     // Size 4
   CRUISER,        // Size 3
   SUBMARINE,      // Size 3
-  DESTROYER       // Size 2
+  DESTROYER,       // Size 2
+  NO_SHIP = -1
 } ShipType;
 
 typedef enum {
@@ -53,6 +54,9 @@ typedef struct{
   int type;
   int row;
   int col;
+  ShipType ship_type;
+  Orientation orientation;
+  int success;
   char message[MAX_MSG_LEN];
 } GameMessage;
 
