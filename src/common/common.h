@@ -24,7 +24,7 @@ typedef enum {
 
 typedef enum {
   HORIZONTAL,
-  VERITCAL
+  VERTICAL
 } Orientation;
 
 typedef enum {
@@ -64,5 +64,6 @@ typedef struct{
 #define MSG_TYPE_SHOT_RES 4
 #define MSG_TYPE_TURN_IND 5 // Turn indication
 #define MSG_TYPE_GAME_OVER 6
+#define MSG_TYPE_PLACE_SHIP_PROMPT 7 
 
 #endif // !COMMON_H
