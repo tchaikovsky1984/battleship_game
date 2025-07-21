@@ -18,8 +18,8 @@ typedef enum {
   CARRIER,        // Size 5 
   BATTLESHIP,     // Size 4
   CRUISER,        // Size 3
-  SUBMARINE,      // Size 2
-  DESTROYER       // Size 1
+  SUBMARINE,      // Size 3
+  DESTROYER       // Size 2
 } ShipType;
 
 typedef enum {
@@ -40,6 +40,7 @@ typedef struct{
   int col;
   Orientation orientation;
   int hits;
+  int is_placed;
 } Ship;
 
 typedef struct{
