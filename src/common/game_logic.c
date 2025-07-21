@@ -36,11 +36,11 @@ int can_place_ship(const PlayerBoard *board, const Ship *ship){
   if(board == NULL || ship == NULL)
     return 0; 
   if(ship->orientation == HORIZONTAL){
-    if(ship->col < 0 || ship->col + ship->size > BOARD_COLS || ship->rows < 0 || ship->rows >= BOARD_ROWS)
+    if(ship->col < 0 || ship->col + ship->size > BOARD_COLS || ship->row < 0 || ship->row >= BOARD_ROWS)
       return 0;
   }
   else{
-    if(ship->col < 0 || ship->col >= BOARD_COLS || ship->rows < 0 || ship->rows + ship->size > BOARD_ROWS)
+    if(ship->col < 0 || ship->col >= BOARD_COLS || ship->row < 0 || ship->row + ship->size > BOARD_ROWS)
       return 0;
   }
   for(int i = 0; i < ship->size; i++){
@@ -75,7 +75,7 @@ void place_ship(PlayerBoard *board, const Ship *ship_to_place) {
     target_ship->row = ship_to_place->row;
     target_ship->col = ship_to_place->col; 
     target_ship->orientation = ship_to_place->orientation;
-    target_ship->is_placed = true; // Mark it as placed
+    target_ship->is_placed = 1; // Mark it as placed
 
     // Apply to the grid
     for (int i = 0; i < ship_to_place->size; i++) {
@@ -130,7 +130,7 @@ int take_shot(PlayerBoard *board, int row, int col, int *is_hit, int *is_sunk){
     return 0;
 }
 
-int check_game_over(PlayerBoard *board){
+int check_game_over(const PlayerBoard *board){
   if(board == NULL)
     return 0;
   return (board->ships_remaining <= 0);
