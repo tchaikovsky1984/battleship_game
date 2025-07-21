@@ -6,6 +6,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <ncurses.h> // Include ncurses library
+#include <sys/time.h>
+#include <sys/select.h>
 
 #include "../common/common.h"
 #include "../common/game_logic.h" 
@@ -66,6 +68,8 @@ int main(int argc, char *argv[]){
   int client_sock;
   struct sockaddr_in server_addr;
   char *server_ip;
+
+  ssize_t bytes_received;
 
   PlayerBoard my_board;        // My ships
   PlayerBoard opponent_board; // My view of opponent's board (fog of war)
@@ -146,10 +150,10 @@ int main(int argc, char *argv[]){
   Orientation current_placement_orientation = HORIZONTAL;
   Ship temp_ship_for_placement; // Temporary ship object to hold current placement attempt
 
-  while(current_client_phase != GAME_PHASE_GAME_OVER){
+  while(current_client_phase != GAME_PHASE_GAMEOVER){
     if(current_client_phase == GAME_PHASE_PLACEMENT){
       draw_board(my_board_win, &my_board, 0, 0, true, my_cursor_y, my_cursor_x);
-      draw_board(opponent_board_win, &opponent_board, 0, 0, false, -1, -1)
+      draw_board(opponent_board_win, &opponent_board, 0, 0, false, -1, -1);
     }
     else{
       // GAME PHASE shooting
@@ -192,7 +196,7 @@ int main(int argc, char *argv[]){
                         send_msg.col = my_cursor_x;
                         send_msg.ship_type = current_ship_to_place_type;
                         send_msg.orientation = current_placement_orientation;
-                        sprintf(send_msg.message_data, "Placement attempt for %s at (%d,%d) %s.", (current_ship_to_place_type == CARRIER) ? "Carrier" : (current_ship_to_place_type == BATTLESHIP) ? "Battleship" : (current_ship_to_place_type == CRUISER) ? "Cruiser" : (current_ship_to_place_type == SUBMARINE) ? "Submarine" : "Destroyer", my_cursor_y, my_cursor_x, (current_placement_orientation == HORIZONTAL) ? "Horizontal" : "Vertical");
+                        sprintf(send_msg.message, "Placement attempt for %s at (%d,%d) %s.", (current_ship_to_place_type == CARRIER) ? "Carrier" : (current_ship_to_place_type == BATTLESHIP) ? "Battleship" : (current_ship_to_place_type == CRUISER) ? "Cruiser" : (current_ship_to_place_type == SUBMARINE) ? "Submarine" : "Destroyer", my_cursor_y, my_cursor_x, (current_placement_orientation == HORIZONTAL) ? "Horizontal" : "Vertical");
                         send(client_sock, &send_msg, sizeof(send_msg), 0);
                         display_message(message_win, "Sending placement request to server...");
                         nodelay(stdscr, FALSE); // Make getch() blocking again while waiting for server response
@@ -222,18 +226,18 @@ int main(int argc, char *argv[]){
       bytes_received = recv(client_sock, &received_msg, sizeof(received_msg), 0);
       if (bytes_received <= 0) {
         display_message(message_win, "Server disconnected or error.");
-        current_client_phase = GAME_PHASE_GAME_OVER;
+        current_client_phase = GAME_PHASE_GAMEOVER;
         continue;
       }
 
       switch (received_msg.type) {
         case MSG_TYPE_TEST:
-                            display_message(message_win, received_msg.message_data);
+                            display_message(message_win, received_msg.message);
                             break;
 
         case MSG_TYPE_PLACE_SHIP_PROMPT:
                             current_ship_to_place_type = received_msg.ship_type;
-                            display_message(message_win, received_msg.message_data);
+                            display_message(message_win, received_msg.message);
                             // Reset cursor for new placement
                             my_cursor_y = 0;
                             my_cursor_x = 0;
@@ -252,7 +256,7 @@ int main(int argc, char *argv[]){
                             temp_ship_for_placement.size = get_ship_size(received_msg.ship_type);
                             place_ship(&my_board, &temp_ship_for_placement);
 
-                            display_message(message_win, received_msg.message_data);
+                            display_message(message_win, received_msg.message);
 
                             // Check if all ships are placed locally
                             bool all_ships_placed_locally = true;
@@ -271,7 +275,7 @@ int main(int argc, char *argv[]){
                             }
                           } 
                           else {
-                            display_message(message_win, received_msg.message_data);
+                            display_message(message_win, received_msg.message);
                             // Stay in placement phase for the same ship type.
                           }
                           current_ship_to_place_type = -1; // Reset so we don't accidentally reuse old prompt
@@ -302,7 +306,7 @@ int main(int argc, char *argv[]){
                                         send_msg.type = MSG_TYPE_SHOT_REQ;
                                         send_msg.row = op_cursor_y;
                                         send_msg.col = op_cursor_x;
-                                        sprintf(send_msg.message_data, "Shot at %c%d", 'A'+op_cursor_x, op_cursor_y);
+                                        sprintf(send_msg.message, "Shot at %c%d", 'A'+op_cursor_x, op_cursor_y);
                                         send(client_sock, &send_msg, sizeof(send_msg), 0);
                                         shot_fired = true;
                                         break;
@@ -312,8 +316,8 @@ int main(int argc, char *argv[]){
                           break; // End of MSG_TYPE_TURN_IND block
 
         case MSG_TYPE_SHOT_RES:
-                        if (strcmp(received_msg.message_data, "HIT!") == 0 || strcmp(received_msg.message_data, "HIT and SUNK!") == 0 || strstr(received_msg.message_data, "was HIT") != NULL) {
-                          if (strstr(received_msg.message_data, "Your ship at") != NULL) {
+                        if (strcmp(received_msg.message, "HIT!") == 0 || strcmp(received_msg.message, "HIT and SUNK!") == 0 || strstr(received_msg.message, "was HIT") != NULL) {
+                          if (strstr(received_msg.message, "Your ship at") != NULL) {
                             my_board.grid[received_msg.row][received_msg.col] = HIT;
                           } 
                           else {
@@ -321,26 +325,26 @@ int main(int argc, char *argv[]){
                           }
                          } 
                         else {
-                          if (strstr(received_msg.message_data, "Opponent MISSED your board at") != NULL) {
+                          if (strstr(received_msg.message, "Opponent MISSED your board at") != NULL) {
                             my_board.grid[received_msg.row][received_msg.col] = MISS;
                           } 
                           else {
                             opponent_board.grid[received_msg.row][received_msg.col] = MISS;
                           }
                         }
-                        display_message(message_win, received_msg.message_data);
+                        display_message(message_win, received_msg.message);
                         nodelay(stdscr, TRUE);
                         break;
 
         case MSG_TYPE_GAME_OVER:
-                        display_message(message_win, received_msg.message_data);
-                        current_client_phase = GAME_PHASE_GAME_OVER;
+                        display_message(message_win, received_msg.message);
+                        current_client_phase = GAME_PHASE_GAMEOVER;
                         nodelay(stdscr, FALSE);
                         getch();
                         break;
 
         default:
-                        display_message(message_win, received_msg.message_data);
+                        display_message(message_win, received_msg.message);
                         nodelay(stdscr, TRUE);
                         break;
       }
@@ -348,12 +352,12 @@ int main(int argc, char *argv[]){
     else if (select_result == -1) {
       perror("select error");
       display_message(message_win, "Network error. Disconnecting.");
-      current_client_phase = GAME_PHASE_GAME_OVER;
+      current_client_phase = GAME_PHASE_GAMEOVER;
     }
-  } // end while (current_client_phase != GAME_PHASE_GAME_OVER)
+  } // end while (current_client_phase != GAME_PHASE_GAMEOVER)
     end_game_loop:;
     // --- Cleanup ---
     close(client_sock);
-    cleanup_ncurses();
+    endwin();
     return 0;
 }
