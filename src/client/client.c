@@ -136,4 +136,224 @@ int main(int argc, char *argv[]){
   init_board(&my_board);
   init_board(&opponent_board);
 
+  GamePhase current_client_phase = GAME_PHASE_PLACEMENT;
+  GameMessage received_msg;
+  GameMessage send_msg;
+  int ch; // For keyboard input
+
+    // Placement phase specific variables
+  ShipType current_ship_to_place_type = -1; // -1 indicates not yet prompted for a ship
+  Orientation current_placement_orientation = HORIZONTAL;
+  Ship temp_ship_for_placement; // Temporary ship object to hold current placement attempt
+
+  while(current_client_phase != GAME_PHASE_GAME_OVER){
+    if(current_client_phase == GAME_PHASE_PLACEMENT){
+      draw_board(my_board_win, &my_board, 0, 0, true, my_cursor_y, my_cursor_x);
+      draw_board(opponent_board_win, &opponent_board, 0, 0, false, -1, -1)
+    }
+    else{
+      // GAME PHASE shooting
+      draw_board(my_board_win, &my_board, 0, 0, true, -1, -1); // No cursor on own board during shooting
+      draw_board(opponent_board_win, &opponent_board, 0, 0, false, op_cursor_y, op_cursor_x);
+    }
+    doupdate();
+
+    nodelay(stdscr, TRUE);
+
+    if(current_client_phase == GAME_PHASE_PLACEMENT){
+      ch = getch();
+      if(ch != ERR){
+        switch(ch){
+          case 'w':
+          case 'W': if(my_cursor_y > 0) my_cursor_y--; break;
+          case 'a':
+          case 'A': if(my_cursor_x > 0) my_cursor_x--; break;
+          case 's':
+          case 'S': if(my_cursor_y < BOARD_ROWS - 1) my_cursor_y++; break;
+          case 'd':
+          case 'D': if(my_cursor_x < BOARD_COLS - 1) my_cursor_x++; break;
+          case 'r':
+          case 'R': current_placement_orientation = (current_placement_orientation == HORIZONTAL) ? VERTICAL : HORIZONTAL;
+                    display_message(message_win, (current_placement_orientation == HORIZONTAL) ? "Orientation: HORIZONTAL (Press R to rotate)" : "Orientation: VERTICAL (Press R to rotate)"); break;
+          case 10:
+                    if(current_ship_to_place_type != -1){
+                      temp_ship_for_placement = (Ship){
+                        .type = current_ship_to_place_type,
+                        .size = get_ship_size(current_ship_to_place_type),
+                        .row = my_cursor_y,
+                        .col = my_cursor_x,
+                        .orientation = current_placement_orientation,
+                        .hits = 0,
+                        .is_placed = 0
+                      };
+                      if(can_place_ship(&my_board, &temp_ship_for_placement)){
+                        send_msg.type = MSG_TYPE_PLACEMENT_REQ;
+                        send_msg.row = my_cursor_y;
+                        send_msg.col = my_cursor_x;
+                        send_msg.ship_type = current_ship_to_place_type;
+                        send_msg.orientation = current_placement_orientation;
+                        sprintf(send_msg.message_data, "Placement attempt for %s at (%d,%d) %s.", (current_ship_to_place_type == CARRIER) ? "Carrier" : (current_ship_to_place_type == BATTLESHIP) ? "Battleship" : (current_ship_to_place_type == CRUISER) ? "Cruiser" : (current_ship_to_place_type == SUBMARINE) ? "Submarine" : "Destroyer", my_cursor_y, my_cursor_x, (current_placement_orientation == HORIZONTAL) ? "Horizontal" : "Vertical");
+                        send(client_sock, &send_msg, sizeof(send_msg), 0);
+                        display_message(message_win, "Sending placement request to server...");
+                        nodelay(stdscr, FALSE); // Make getch() blocking again while waiting for server response
+                       }
+                      else{
+                        display_message(message_win, "Invalid placement (local check). Overlaps or out of bounds. Try again.");
+                      }
+                    }
+                    else{
+                      display_message(message_win, "Server hasn't prompted for a ship yet. Waiting... ");
+                    }
+                    break;
+        }
+      }
+    }
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 10000;
+
+    fd_set read_fds;
+    FD_ZERO(&read_fds);
+    FD_SET(client_sock, &read_fds);
+
+    int select_result = select(client_sock + 1, &read_fds, NULL, NULL, &tv);
+
+    if(select_result > 0 && FD_ISSET(client_sock, &read_fds)){
+      bytes_received = recv(client_sock, &received_msg, sizeof(received_msg), 0);
+      if (bytes_received <= 0) {
+        display_message(message_win, "Server disconnected or error.");
+        current_client_phase = GAME_PHASE_GAME_OVER;
+        continue;
+      }
+
+      switch (received_msg.type) {
+        case MSG_TYPE_TEST:
+                            display_message(message_win, received_msg.message_data);
+                            break;
+
+        case MSG_TYPE_PLACE_SHIP_PROMPT:
+                            current_ship_to_place_type = received_msg.ship_type;
+                            display_message(message_win, received_msg.message_data);
+                            // Reset cursor for new placement
+                            my_cursor_y = 0;
+                            my_cursor_x = 0;
+                            current_placement_orientation = HORIZONTAL; // Default orientation for new placement
+                            nodelay(stdscr, TRUE); // Re-enable non-blocking input for placement
+                            break;
+
+        case MSG_TYPE_PLACEMENT_RES:
+                          nodelay(stdscr, TRUE); // Ensure input is non-blocking again after server response
+                          if (received_msg.success) {
+                            // Update local board
+                            temp_ship_for_placement.row = received_msg.row;
+                            temp_ship_for_placement.col = received_msg.col;
+                            temp_ship_for_placement.orientation = received_msg.orientation;
+                            temp_ship_for_placement.type = received_msg.ship_type;
+                            temp_ship_for_placement.size = get_ship_size(received_msg.ship_type);
+                            place_ship(&my_board, &temp_ship_for_placement);
+
+                            display_message(message_win, received_msg.message_data);
+
+                            // Check if all ships are placed locally
+                            bool all_ships_placed_locally = true;
+                            for (int i = 0; i < NUM_SHIPS; i++) {
+                              if (!my_board.ships[i].is_placed) {
+                                all_ships_placed_locally = false;
+                                break;
+                              }
+                            }
+                            if (all_ships_placed_locally) {
+                              current_client_phase = GAME_PHASE_SHOOTING;
+                              display_message(message_win, "All your ships are placed! Waiting for opponent...");
+                              // Reset op_cursor for shooting
+                              op_cursor_y = 0;
+                              op_cursor_x = 0;
+                            }
+                          } 
+                          else {
+                            display_message(message_win, received_msg.message_data);
+                            // Stay in placement phase for the same ship type.
+                          }
+                          current_ship_to_place_type = -1; // Reset so we don't accidentally reuse old prompt
+                          break;
+
+        case MSG_TYPE_TURN_IND:
+                          current_client_phase = GAME_PHASE_SHOOTING; // Confirm shooting phase
+                          display_message(message_win, "YOUR TURN! Use WASD to aim, ENTER to fire."); // Updated message
+                          nodelay(stdscr, FALSE); // Make getch() blocking again for turn
+                          // --- Input loop for shooting ---
+                          bool shot_fired = false;
+                          while (!shot_fired) {
+                            draw_board(my_board_win, &my_board, 0, 0, true, -1, -1);
+                            draw_board(opponent_board_win, &opponent_board, 0, 0, false, op_cursor_y, op_cursor_x);
+                            doupdate();
+
+                            ch = getch();
+                            switch (ch) {
+                              case 'w': // WASD controls for shooting
+                              case 'W': if (op_cursor_y > 0) op_cursor_y--; break;
+                              case 's':
+                              case 'S': if (op_cursor_y < BOARD_ROWS - 1) op_cursor_y++; break;
+                              case 'a':
+                              case 'A': if (op_cursor_x > 0) op_cursor_x--; break;
+                              case 'd':
+                              case 'D': if (op_cursor_x < BOARD_COLS - 1) op_cursor_x++; break;
+                              case 10: // Enter key
+                                        send_msg.type = MSG_TYPE_SHOT_REQ;
+                                        send_msg.row = op_cursor_y;
+                                        send_msg.col = op_cursor_x;
+                                        sprintf(send_msg.message_data, "Shot at %c%d", 'A'+op_cursor_x, op_cursor_y);
+                                        send(client_sock, &send_msg, sizeof(send_msg), 0);
+                                        shot_fired = true;
+                                        break;
+                            }
+                          }
+                          nodelay(stdscr, TRUE); // After shot, make getch() non-blocking again
+                          break; // End of MSG_TYPE_TURN_IND block
+
+        case MSG_TYPE_SHOT_RES:
+                        if (strcmp(received_msg.message_data, "HIT!") == 0 || strcmp(received_msg.message_data, "HIT and SUNK!") == 0 || strstr(received_msg.message_data, "was HIT") != NULL) {
+                          if (strstr(received_msg.message_data, "Your ship at") != NULL) {
+                            my_board.grid[received_msg.row][received_msg.col] = HIT;
+                          } 
+                          else {
+                            opponent_board.grid[received_msg.row][received_msg.col] = HIT;
+                          }
+                         } 
+                        else {
+                          if (strstr(received_msg.message_data, "Opponent MISSED your board at") != NULL) {
+                            my_board.grid[received_msg.row][received_msg.col] = MISS;
+                          } 
+                          else {
+                            opponent_board.grid[received_msg.row][received_msg.col] = MISS;
+                          }
+                        }
+                        display_message(message_win, received_msg.message_data);
+                        nodelay(stdscr, TRUE);
+                        break;
+
+        case MSG_TYPE_GAME_OVER:
+                        display_message(message_win, received_msg.message_data);
+                        current_client_phase = GAME_PHASE_GAME_OVER;
+                        nodelay(stdscr, FALSE);
+                        getch();
+                        break;
+
+        default:
+                        display_message(message_win, received_msg.message_data);
+                        nodelay(stdscr, TRUE);
+                        break;
+      }
+    } 
+    else if (select_result == -1) {
+      perror("select error");
+      display_message(message_win, "Network error. Disconnecting.");
+      current_client_phase = GAME_PHASE_GAME_OVER;
+    }
+  } // end while (current_client_phase != GAME_PHASE_GAME_OVER)
+    end_game_loop:;
+    // --- Cleanup ---
+    close(client_sock);
+    cleanup_ncurses();
+    return 0;
 }
