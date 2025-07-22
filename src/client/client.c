@@ -12,7 +12,17 @@
 #include "../common/common.h"
 #include "../common/game_logic.h" 
 
-void draw_board(WINDOW *win, const PlayerBoard *board, int offset_y, int offset_x, int show_ships, int cursor_x, int cursor_y){
+WINDOW *my_board_win;
+WINDOW *opponent_board_win;
+WINDOW *message_win;
+
+PlayerBoard my_board;
+PlayerBoard opponent_board;
+
+int my_cursor_y = 0, my_cursor_x = 0; // For placement cursor (row, col)
+int op_cursor_y = 0, op_cursor_x = 0; // For shooting cursor (row, col)
+
+void draw_board(WINDOW *win, const PlayerBoard *board, int offset_y, int offset_x, int show_ships, int cursor_y, int cursor_x){
   wclear(win);
   box(win, 0, 0);
 
@@ -47,9 +57,9 @@ void draw_board(WINDOW *win, const PlayerBoard *board, int offset_y, int offset_
 
       // Draw cursor
       if (r == cursor_y && c == cursor_x) {
-        wattron(win, A_REVERSE); // Reverse colors for cursor
+        wattron(win, COLOR_PAIR(5)); // Reverse colors for cursor
         mvwaddch(win, offset_y + r + 1, offset_x + c * 2 + 2, cell_char);
-        wattroff(win, A_REVERSE);
+        wattroff(win, COLOR_PAIR(5));
       }
     }
   }
@@ -152,13 +162,13 @@ int main(int argc, char *argv[]){
 
   while(current_client_phase != GAME_PHASE_GAMEOVER){
     if(current_client_phase == GAME_PHASE_PLACEMENT){
-      draw_board(my_board_win, &my_board, 0, 0, true, my_cursor_y, my_cursor_x);
-      draw_board(opponent_board_win, &opponent_board, 0, 0, false, -1, -1);
+      draw_board(my_board_win, &my_board, 0, 0, 1, my_cursor_y, my_cursor_x);
+      draw_board(opponent_board_win, &opponent_board, 0, 0, 0, -1, -1);
     }
     else{
       // GAME PHASE shooting
-      draw_board(my_board_win, &my_board, 0, 0, true, -1, -1); // No cursor on own board during shooting
-      draw_board(opponent_board_win, &opponent_board, 0, 0, false, op_cursor_y, op_cursor_x);
+      draw_board(my_board_win, &my_board, 0, 0, 1, -1, -1); // No cursor on own board during shooting
+      draw_board(opponent_board_win, &opponent_board, 0, 0, 0, op_cursor_y, op_cursor_x);
     }
     doupdate();
 
